@@ -494,19 +494,18 @@ int getShellyTyp(){
         } 
 
         //test auf Shelly 3EM
-        if( payload.indexOf("SEM") >= 0 ){
+        if(payload.indexOf("SHEM-3") >= 0 ){
           typ = shelly_3em;
           memset(metername, 0, sizeof(metername)); 
           strcat(metername, "Shelly 3EM");   
         }
 
         //test auf Shelly EM
-        if(payload.indexOf("SHEM") >= 0 ){
+        if(payload.indexOf("SHEM") >= 0 && payload.indexOf("SHEM-3") < 0){
           typ = shelly_em;
           memset(metername, 0, sizeof(metername)); 
           strcat(metername, "Shelly EM");   
         }
-
          //test auf Shelly 1PM
         if(payload.indexOf("SHSW-PM") >= 0){
           typ = shelly_1pm;
@@ -524,12 +523,12 @@ int getShellyTyp(){
 
 
 // read shelly3EM
-int getMeterData(int typ) {
+float getMeterData(int typ) {
   String shelly_url;
-  int power = 0;
-  int power1 = 0;
-  int power2 = 0;
-  int power3 = 0; 
+  float power = 0.0;
+  float power1 = 0.0;
+  float power2 = 0.0;
+  float power3 = 0.0; 
   
   DynamicJsonDocument doc(2048);
   WiFiClient client_shelly;
@@ -540,7 +539,7 @@ int getMeterData(int typ) {
   } else if(typ >= 2) {
     shelly_url = "http://" + shelly_ip +  "/status";  // Shelly 3EM und Andere
   } else{
-    return 0;
+    return 0.0;
   }                      
   
   if (http.begin(client_shelly, shelly_url))  {  
@@ -556,21 +555,30 @@ int getMeterData(int typ) {
         }
 
         if (typ == 1) {
-          power1 = doc["em:0"]["a_act_power"];  //Shelly 3EM PRO
-          power2 = doc["em:0"]["b_act_power"];
-          power3 = doc["em:0"]["c_act_power"]; 
+          power1 = doc["em:0"]["a_act_power"].as<float>();  //Shelly 3EM PRO
+          power2 = doc["em:0"]["b_act_power"].as<float>();
+          power3 = doc["em:0"]["c_act_power"].as<float>(); 
         } else if (typ == 2) {
-          power1 = doc["emeter"]["0"]["power"]; //Shelly 3EM
-          power2 = doc["emeter"]["1"]["power"]; 
-          power3 = doc["emeter"]["2"]["power"]; 
+          power1 = doc["emeters"][0]["power"].as<float>(); .//Shelly 3EM "wifi_sta":{"connected":true,"ssid":"test","ip":"192.168.1.98","rssi":-81},"cloud":{"enabled":true,"connected":true},
+                                                            //"mqtt":{"connected":false},"time":"23:45","unixtime":1714081543,"serial":000000,"has_update":false,"mac":"xxxxxxxxx","cfg_changed_cnt":2,"actions_stats":{"skipped":0},
+                                                            //"relays":[{"ison":false,"has_timer":false,"timer_started":0,"timer_duration":0,"timer_remaining":0,"overpower":false,"is_valid":true,"source":"input"}],
+                                                            //"emeters":[{"power":447.99,"pf":0.81,"current":2.40,"voltage":233.50,"is_valid":true,"total":1844360.3,"total_returned":242062.3},
+                                                            //{"power":72.62,"pf":0.35,"current":0.90,"voltage":233.82,"is_valid":true,"total":1540301.8,"total_returned":0.0},
+                                                            //{"power":212.42,"pf":0.55,"current":1.67,"voltage":233.87,"is_valid":true,"total":1344965.1,"total_returned":702477.1}],
+                                                            //"total_power":733.03,"emeter_n":{"current":0.00,"ixsum":1.83,"mismatch":false,"is_valid":false},"fs_mounted":true,"v_data":1,"ct_calst":0,
+                                                            //"update":{"status":"idle","has_update":false,"new_version":"20230913-114244/v1.14.0-gcb84623","old_version":"20230913-114244/v1.14.0-gcb84623",
+                                                            //"beta_version":"20231107-165007/v1.14.1-rc1-g0617c15"},"ram_total":49920,"ram_free":30100,"fs_size":233681,"fs_free":154616,"uptime":10558965}
+                                                            // Mit Float wird der Shelly 3 EM ausgelsen nur mal quick and dirty getestet bin aber auch kein profi :) 
+          power2 = doc["emeters"][1]["power"].as<float>(); 
+          power3 = doc["emeters"][2]["power"].as<float>(); 
         } else if (typ == 3) {
-          power1 = doc["meters"]["0"]["power"]; // Shelly EM Kanal 1
-          power2 = doc["meters"]["1"]["power"]; // Shelly EM Kanal 2
-          power3 = 0; 
+          power1 = doc["meters"][0]["power"].as<float>(); // Shelly EM Kanal 1
+          power2 = doc["meters"][1]["power"].as<float>(); // Shelly EM Kanal 2
+          power3 = 0.0; 
         } else if (typ == 4) {
-          power1 = doc["meters"]["power"]; // Shelly 1PM
-          power2 = 0;
-          power3 = 0;   
+          power1 = doc["meters"]["power"].as<float>(); // Shelly 1PM
+          power2 = 0.0;
+          power3 = 0.0;   
         }
         
         power = power1 + power2 + power3;
@@ -579,6 +587,16 @@ int getMeterData(int typ) {
         meterl1 = power1;
         meterl2 = power2;
         meterl3 = power3;
+
+        // Debugging-Ausgaben
+        DBG_PRINT("Power: ");
+        DBG_PRINTLN(power);
+        DBG_PRINT("Power1: ");
+        DBG_PRINTLN(power1);
+        DBG_PRINT("Power2: ");
+        DBG_PRINTLN(power2);
+        DBG_PRINT("Power3: ");
+        DBG_PRINTLN(power3);
       }
 
     } else {
@@ -1154,7 +1172,7 @@ void loop() {
   }
 
 
-  // timer to get Shelly3EM data (1000ms)
+// timer to get Shelly3EM data (1000ms)
   if ((millis() - lastMeterinterval) > meterinterval) {  
     if (shelly_typ > 0){
       shelly_power = getMeterData(shelly_typ);
@@ -1234,6 +1252,5 @@ void loop() {
 
 
 }
-
 
 
